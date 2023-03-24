@@ -1,30 +1,35 @@
 # -*- coding: utf-8 -*-
 import scrapy
+import json
+import re
 
-
-class BooksSpider(scrapy.Spider):
-    name = "books"
-    allowed_domains = ["books.toscrape.com"]
-    start_urls = [
-        'http://books.toscrape.com/',
-    ]
+class GlassdoorReviewSpider(scrapy.Spider):
+    name = 'glassdoor_review_spider'
+    allowed_domains = ['www.glassdoor.com']
+    start_urls = ['https://www.glassdoor.com/Reviews/Amazon-Reviews-E6036.htm']
 
     def parse(self, response):
-        for book_url in response.css("article.product_pod > h3 > a ::attr(href)").extract():
-            yield scrapy.Request(response.urljoin(book_url), callback=self.parse_book_page)
-        next_page = response.css("li.next > a ::attr(href)").extract_first()
-        if next_page:
-            yield scrapy.Request(response.urljoin(next_page), callback=self.parse)
+        # Extract the JSON data containing the reviews from the page
+        json_data = re.search('({"employerId":.*?})', response.text).group(1)
+        data = json.loads(json_data)
 
-    def parse_book_page(self, response):
-        item = {}
-        product = response.css("div.product_main")
-        item["title"] = product.css("h1 ::text").extract_first()
-        item['category'] = response.xpath(
-            "//ul[@class='breadcrumb']/li[@class='active']/preceding-sibling::li[1]/a/text()"
-        ).extract_first()
-        item['description'] = response.xpath(
-            "//div[@id='product_description']/following-sibling::p/text()"
-        ).extract_first()
-        item['price'] = response.css('p.price_color ::text').extract_first()
-        yield item
+        # Extract the reviews from the JSON data
+        reviews = data['reviews']
+
+        for review in reviews:
+            # Extract the review title, rating, and text
+            title = review['jobTitle']
+            rating = review['ratingNumber']
+            text = review['pros'] + ' ' + review['cons']
+
+            # Create a dictionary with the extracted data
+            data = {'title': title, 'rating': rating, 'text': text}
+
+            # Yield the dictionary as a Scrapy item
+            yield data
+
+        # Follow the "next page" link to scrape additional reviews
+        next_page = data['paging']['nextUrl']
+        if next_page:
+            yield scrapy.Request(next_page, callback=self.parse)
+
